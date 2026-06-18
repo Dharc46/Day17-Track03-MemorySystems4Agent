@@ -41,8 +41,6 @@ Repo này được chia thành ba phần rõ ràng:
 - `src/test_agents.py`: test students cần làm pass
 - `data/conversations.json`: benchmark chuẩn gồm 10 hội thoại tiếng Việt
 - `data/advanced_long_context.json`: benchmark dài để làm lộ tác động của compact memory
-- `lab.txt`: yêu cầu gốc của bài lab
-
 ## Luồng học khuyến nghị
 
 1. Đọc `Guide.md` để hiểu thứ tự triển khai.
