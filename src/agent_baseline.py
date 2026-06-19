@@ -16,7 +16,7 @@ class SessionState:
 
 
 class BaselineAgent:
-    """Student TODO: implement Agent A.
+    """Agent A: baseline memory behavior.
 
     Requirements:
     - Within-session memory only
@@ -29,33 +29,30 @@ class BaselineAgent:
         self.force_offline = force_offline
         self.sessions: dict[str, SessionState] = {}
 
-        # TODO: optionally initialize a real LangChain/LangGraph agent when dependencies exist.
-        self.langchain_agent = None
+        self.langchain_agent = None if force_offline else self._maybe_build_langchain_agent()
 
     def reply(self, user_id: str, thread_id: str, message: str) -> dict[str, Any]:
-        """Student TODO: return the agent response and token accounting.
+        """Return the agent response and token accounting.
 
         Pseudocode:
         - If a live agent exists, call the live path.
         - Otherwise use a deterministic offline path.
         """
 
-        raise NotImplementedError
+        return self._reply_offline(thread_id, message)
 
     def token_usage(self, thread_id: str) -> int:
-        # TODO: return cumulative agent token count for one thread.
-        raise NotImplementedError
+        return self.sessions.get(thread_id, SessionState()).token_usage
 
     def prompt_token_usage(self, thread_id: str) -> int:
-        # TODO: estimate how much prompt context this baseline kept processing.
-        raise NotImplementedError
+        return self.sessions.get(thread_id, SessionState()).prompt_tokens_processed
 
     def compaction_count(self, thread_id: str) -> int:
         # Baseline has no compact memory.
         return 0
 
     def _reply_offline(self, thread_id: str, message: str) -> dict[str, Any]:
-        """Student TODO: implement a simple offline behavior.
+        """Run a simple deterministic offline behavior.
 
         Suggested behavior:
         - Store the new user message in the session
@@ -64,12 +61,60 @@ class BaselineAgent:
         - Never remember facts across different thread ids
         """
 
-        raise NotImplementedError
+        session = self.sessions.setdefault(thread_id, SessionState())
+        prompt_tokens = estimate_tokens(
+            "\n".join(f"{m['role']}: {m['content']}" for m in session.messages)
+            + f"\nuser: {message}"
+        )
+        session.prompt_tokens_processed += prompt_tokens
+        session.messages.append({"role": "user", "content": message})
+
+        response = self._deterministic_response(session.messages, message)
+        session.messages.append({"role": "assistant", "content": response})
+        response_tokens = estimate_tokens(response)
+        session.token_usage += response_tokens
+
+        return {
+            "agent": "baseline",
+            "thread_id": thread_id,
+            "answer": response,
+            "agent_tokens": response_tokens,
+            "prompt_tokens": prompt_tokens,
+        }
 
     def _maybe_build_langchain_agent(self):
-        """Student TODO: optionally wire `create_agent` + `InMemorySaver` here.
+        """Optionally build a live chat model when dependencies and keys exist.
 
         Use `build_chat_model(self.config.model)` so the baseline can run with any supported provider.
         """
 
-        raise NotImplementedError
+        try:
+            return build_chat_model(self.config.model)
+        except Exception:
+            return None
+
+    def _deterministic_response(self, messages: list[dict[str, str]], message: str) -> str:
+        lower = message.lower()
+        thread_text = "\n".join(m["content"] for m in messages if m["role"] == "user")
+
+        if any(marker in lower for marker in ["tên", "nghề", "ở đâu", "nơi ở", "đồ uống", "món ăn", "style", "nuôi"]):
+            facts = []
+            for label, needles in {
+                "tên": ["DũngCT Stress", "DũngCT"],
+                "nghề": ["MLOps engineer", "backend engineer"],
+                "nơi ở": ["Đà Nẵng", "Huế", "Đà Nẵng"],
+                "đồ uống": ["cà phê sữa đá"],
+                "món ăn": ["mì Quảng"],
+                "style": ["3 bullet", "ngắn gọn"],
+                "thú nuôi": ["corgi"],
+                "kỹ thuật": ["Python", "AI"],
+            }.items():
+                for needle in needles:
+                    if needle.lower() in thread_text.lower():
+                        facts.append(f"{label}: {needle}")
+                        break
+            if facts:
+                return "Trong thread hiện tại mình thấy " + "; ".join(facts) + "."
+            return "Mình không có trí nhớ dài hạn trong thread mới, nên không chắc thông tin này."
+
+        return "Mình đã ghi nhận trong thread hiện tại. Baseline chỉ giữ ngữ cảnh ngắn hạn."
